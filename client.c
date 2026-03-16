@@ -7,6 +7,32 @@
 #include <sys/select.h>
 #include "message.h"
 
+static int send_all(int sockfd, const void *buf, size_t len) {
+    const char *p = (const char *)buf;
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(sockfd, p + sent, len - sent, 0);
+        if (n <= 0) {
+            return -1;
+        }
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+static int recv_all(int sockfd, void *buf, size_t len) {
+    char *p = (char *)buf;
+    size_t recvd = 0;
+    while (recvd < len) {
+        ssize_t n = recv(sockfd, p + recvd, len - recvd, 0);
+        if (n <= 0) {
+            return -1;
+        }
+        recvd += (size_t)n;
+    }
+    return 0;
+}
+
 static int handle_login_command(const char *buffer, int *sockfd, char *my_client_id) {
     char client_id[MAX_NAME];
     char password[MAX_DATA];
@@ -57,7 +83,7 @@ static int handle_login_command(const char *buffer, int *sockfd, char *my_client
     strncpy((char *)msg.data, password, MAX_DATA - 1);
     msg.size = strlen((char *)msg.data);
 
-    if (send(*sockfd, &msg, sizeof(msg), 0) < 0) {
+    if (send_all(*sockfd, &msg, sizeof(msg)) < 0) {
         perror("Send failed");
         close(*sockfd);
         *sockfd = -1;
@@ -80,7 +106,31 @@ static void send_exit_if_connected(int sockfd, const char *client_id) {
     msg.type = EXIT;
     strncpy((char *)msg.source, client_id, MAX_NAME - 1);
     msg.size = 0;
-    send(sockfd, &msg, sizeof(msg), 0);
+    send_all(sockfd, &msg, sizeof(msg));
+}
+
+static int send_simple_request(int sockfd, unsigned int type, const char *client_id, const char *data) {
+    if (sockfd == -1) {
+        printf("Not connected. Please login first.\n");
+        return 0;
+    }
+
+    struct message msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = type;
+    strncpy((char *)msg.source, client_id, MAX_NAME - 1);
+    if (data != NULL) {
+        strncpy((char *)msg.data, data, MAX_DATA - 1);
+        msg.size = strlen((char *)msg.data);
+    } else {
+        msg.size = 0;
+    }
+
+    if (send_all(sockfd, &msg, sizeof(msg)) < 0) {
+        perror("Send failed");
+        return 0;
+    }
+    return 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -93,6 +143,7 @@ int main(int argc, char *argv[]) {
     int sockfd = -1;
     int logged_in = 0;
     char my_client_id[MAX_NAME] = {0};
+    char my_session_id[MAX_NAME] = {0};
 
     while (1) {
         fd_set readfds;
@@ -127,6 +178,7 @@ int main(int argc, char *argv[]) {
             if (strncmp(buffer, "/login", 6) == 0) {
                 if (handle_login_command(buffer, &sockfd, my_client_id)) {
                     logged_in = 0;
+                    memset(my_session_id, 0, sizeof(my_session_id));
                 }
             } else if (strcmp(buffer, "/logout") == 0) {
                 if (sockfd == -1 || !logged_in) {
@@ -137,7 +189,38 @@ int main(int argc, char *argv[]) {
                     sockfd = -1;
                     logged_in = 0;
                     memset(my_client_id, 0, sizeof(my_client_id));
+                    memset(my_session_id, 0, sizeof(my_session_id));
                     printf("Logged out.\n");
+                }
+            } else if (strncmp(buffer, "/createsession", 14) == 0) {
+                char session_id[MAX_NAME];
+                if (sscanf(buffer, "/createsession %127s", session_id) != 1) {
+                    printf("Usage: /createsession <session ID>\n");
+                } else if (!logged_in) {
+                    printf("Please login first.\n");
+                } else {
+                    send_simple_request(sockfd, NEW_SESS, my_client_id, session_id);
+                }
+            } else if (strncmp(buffer, "/joinsession", 12) == 0) {
+                char session_id[MAX_NAME];
+                if (sscanf(buffer, "/joinsession %127s", session_id) != 1) {
+                    printf("Usage: /joinsession <session ID>\n");
+                } else if (!logged_in) {
+                    printf("Please login first.\n");
+                } else {
+                    send_simple_request(sockfd, JOIN, my_client_id, session_id);
+                }
+            } else if (strcmp(buffer, "/leavesession") == 0) {
+                if (!logged_in) {
+                    printf("Please login first.\n");
+                } else {
+                    send_simple_request(sockfd, LEAVE_SESS, my_client_id, "");
+                }
+            } else if (strcmp(buffer, "/list") == 0) {
+                if (!logged_in) {
+                    printf("Please login first.\n");
+                } else {
+                    send_simple_request(sockfd, QUERY, my_client_id, "");
                 }
             } else if (strcmp(buffer, "/quit") == 0) {
                 send_exit_if_connected(sockfd, my_client_id);
@@ -149,15 +232,20 @@ int main(int argc, char *argv[]) {
             } else if (buffer[0] == '\0') {
                 continue;
             } else {
-                printf("Command not implemented yet in this phase.\n");
+                if (!logged_in) {
+                    printf("Unknown command. Please login first.\n");
+                } else if (buffer[0] == '/') {
+                    printf("Unknown command.\n");
+                } else {
+                    send_simple_request(sockfd, MESSAGE, my_client_id, buffer);
+                }
             }
         }
 
         if (sockfd != -1 && FD_ISSET(sockfd, &readfds)) {
             struct message response;
             memset(&response, 0, sizeof(response));
-            int n = recv(sockfd, &response, sizeof(response), 0);
-            if (n <= 0) {
+            if (recv_all(sockfd, &response, sizeof(response)) < 0) {
                 printf("Server disconnected.\n");
                 close(sockfd);
                 sockfd = -1;
@@ -178,6 +266,24 @@ int main(int argc, char *argv[]) {
                 sockfd = -1;
                 logged_in = 0;
                 memset(my_client_id, 0, sizeof(my_client_id));
+                memset(my_session_id, 0, sizeof(my_session_id));
+            } else if (response.type == NS_ACK) {
+                strncpy(my_session_id, (char *)response.data, MAX_NAME - 1);
+                my_session_id[MAX_NAME - 1] = '\0';
+                printf("Session created and joined: %s\n", my_session_id);
+            } else if (response.type == JN_ACK) {
+                if (strcmp((char *)response.data, "Left session") == 0) {
+                    my_session_id[0] = '\0';
+                    printf("Left current session.\n");
+                } else {
+                    strncpy(my_session_id, (char *)response.data, MAX_NAME - 1);
+                    my_session_id[MAX_NAME - 1] = '\0';
+                    printf("Joined session: %s\n", my_session_id);
+                }
+            } else if (response.type == JN_NAK) {
+                printf("Session operation failed: %s\n", response.data);
+            } else if (response.type == QU_ACK) {
+                printf("%s\n", response.data);
             } else if (response.type == MESSAGE) {
                 printf("[%s] %s\n", response.source, response.data);
             } else {
