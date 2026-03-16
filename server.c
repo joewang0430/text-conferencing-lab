@@ -9,7 +9,7 @@
 #include "message.h"
 
 #define MAX_CLIENTS 64
-#define INACTIVITY_TIMEOUT_SEC 20
+#define INACTIVITY_TIMEOUT_SEC 30
 
 typedef struct {
     int sockfd;
