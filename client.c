@@ -8,15 +8,16 @@
 #include "message.h"
 
 static int send_all(int sockfd, const void *buf, size_t len) {
-    const char *p = (const char *)buf;
-    size_t sent = 0;
-    while (sent < len) {
-        ssize_t n = send(sockfd, p + sent, len - sent, 0);
-        if (n <= 0) {
-            return -1;
-        }
-        sent += (size_t)n;
-    }
+    // const char *p = (const char *)buf;
+    // size_t sent = 0;
+    // while (sent < len) {
+    //     ssize_t n = send(sockfd, p + sent, len - sent, 0);
+    //     if (n <= 0) {
+    //         return -1;
+    //     }
+    //     sent += (size_t)n;
+    // }
+    send(sockfd, buf, len, 0);
     return 0;
 }
 
