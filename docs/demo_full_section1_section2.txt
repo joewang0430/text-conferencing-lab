@@ -96,7 +96,7 @@ Note:
 
 14. Open a new client (or reuse one), login and stay idle:
   - `/login user1 pass123 128.100.13.74 8888`
-    - Then do not type anything for at least 30+ seconds.
+    - Then do not type anything for at least 60+ seconds.
 
 15. Expected timeout behavior:
     - Client displays: `Server timeout: Disconnected due to inactivity`
