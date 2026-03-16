@@ -28,7 +28,7 @@ Note:
 **Part 1: Section 1 Core Flow**
 
 1. Client A login:
-   - `/login jill eW94dsol 127.0.0.1 8888`
+  - `/login jill eW94dsol 128.100.13.74 8888`
    - Expected: `Login successful: Welcome!`
 
 2. Client A create and join session:
@@ -36,7 +36,7 @@ Note:
    - Expected: `Session created and joined: lab_help`
 
 3. Client B login:
-   - `/login jack 432wlFd 127.0.0.1 8888`
+  - `/login jack 432wlFd 128.100.13.74 8888`
    - Expected: `Login successful: Welcome!`
 
 4. Client B join existing session:
@@ -77,7 +77,7 @@ Note:
 10. Keep Client A logged in as `jill`.
 
 11. On Client B, login again if needed:
-    - `/login jack 432wlFd 127.0.0.1 8888`
+  - `/login jack 432wlFd 128.100.13.74 8888`
     - Expected: login success.
 
 12. Send private message from B to A:
@@ -95,7 +95,7 @@ Note:
 **Part 3: Section 2 Feature #2 (Inactivity Timer)**
 
 14. Open a new client (or reuse one), login and stay idle:
-    - `/login user1 pass123 127.0.0.1 8888`
+  - `/login user1 pass123 128.100.13.74 8888`
     - Then do not type anything for at least 20+ seconds.
 
 15. Expected timeout behavior:
@@ -111,7 +111,7 @@ Note:
 **Negative Tests (Recommended in Demo)**
 
 17. Invalid password:
-    - `/login user1 wrongpass 127.0.0.1 8888`
+  - `/login user1 wrongpass 128.100.13.74 8888`
     - Expected: `Server response (NAK): Invalid client ID or password`
 
 18. Join non-existing session:
