@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <netdb.h>
 #include "message.h"
 
 static int send_all(int sockfd, const void *buf, size_t len) {
@@ -37,11 +38,14 @@ static int recv_all(int sockfd, void *buf, size_t len) {
 static int handle_login_command(const char *buffer, int *sockfd, char *my_client_id) {
     char client_id[MAX_NAME];
     char password[MAX_DATA];
-    char server_ip[32];
+    char server_host[256];
     int server_port;
-    struct sockaddr_in server_addr;
+    char port_str[16];
+    struct addrinfo hints;
+    struct addrinfo *servinfo = NULL;
+    struct addrinfo *p = NULL;
 
-    if (sscanf(buffer, "/login %127s %1023s %31s %d", client_id, password, server_ip, &server_port) != 4) {
+    if (sscanf(buffer, "/login %127s %1023s %255s %d", client_id, password, server_host, &server_port) != 4) {
         printf("Error: Invalid login format. Usage: /login <client ID> <password> <server-IP> <server-port>\n");
         return 0;
     }
@@ -51,29 +55,41 @@ static int handle_login_command(const char *buffer, int *sockfd, char *my_client
         return 0;
     }
 
-    *sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (*sockfd < 0) {
-        perror("Socket creation failed");
-        *sockfd = -1;
+    if (server_port <= 0 || server_port > 65535) {
+        printf("Error: Invalid port number\n");
         return 0;
     }
 
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(server_port);
+    snprintf(port_str, sizeof(port_str), "%d", server_port);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
 
-    if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
-        printf("Invalid address or address not supported\n");
-        close(*sockfd);
-        *sockfd = -1;
+    int status = getaddrinfo(server_host, port_str, &hints, &servinfo);
+    if (status != 0) {
+        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
         return 0;
     }
 
-    printf("Connecting to %s:%d...\n", server_ip, server_port);
-    if (connect(*sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    printf("Connecting to %s:%d...\n", server_host, server_port);
+    *sockfd = -1;
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        int candidate_sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (candidate_sock < 0) {
+            continue;
+        }
+
+        if (connect(candidate_sock, p->ai_addr, p->ai_addrlen) == 0) {
+            *sockfd = candidate_sock;
+            break;
+        }
+
+        close(candidate_sock);
+    }
+    freeaddrinfo(servinfo);
+
+    if (*sockfd == -1) {
         perror("Connection failed");
-        close(*sockfd);
-        *sockfd = -1;
         return 0;
     }
 
