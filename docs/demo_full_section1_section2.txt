@@ -1,0 +1,151 @@
+**Full Demo Checklist (Section 1 + Section 2)**
+
+This checklist is a complete end-to-end demo script for your ECE361 Text Conferencing Lab.
+It covers all implemented Section 1 features, plus the two Section 2 features:
+1) Private Messaging
+2) Inactivity Timer
+
+---
+
+**Environment Setup**
+
+- Terminal S (Server):
+  - `./server 8888`
+  - Expected: server starts and listens on port 8888.
+
+- Terminal A (Client A):
+  - `./client`
+
+- Terminal B (Client B):
+  - `./client`
+
+Note:
+- If testing on one machine, use `127.0.0.1` as server IP.
+- If cross-machine testing, replace `127.0.0.1` with the real server machine IP.
+
+---
+
+**Part 1: Section 1 Core Flow**
+
+1. Client A login:
+   - `/login jill eW94dsol 127.0.0.1 8888`
+   - Expected: `Login successful: Welcome!`
+
+2. Client A create and join session:
+   - `/createsession lab_help`
+   - Expected: `Session created and joined: lab_help`
+
+3. Client B login:
+   - `/login jack 432wlFd 127.0.0.1 8888`
+   - Expected: `Login successful: Welcome!`
+
+4. Client B join existing session:
+   - `/joinsession lab_help`
+   - Expected: `Joined session: lab_help`
+
+5. Client B send session message:
+   - `hello_everyone`
+   - Expected:
+     - Client A displays: `[jack] hello_everyone`
+     - Client B displays: `[jack] hello_everyone`
+
+6. Client B query users/sessions:
+   - `/list`
+   - Expected:
+     - Shows both `jill` and `jack` online
+     - Shows both in `lab_help`
+     - Session member count is 2
+
+7. Client B leave session:
+   - `/leavesession`
+   - Expected: `Left current session.`
+
+8. Client A query again:
+   - `/list`
+   - Expected:
+     - `jill` still in session (if not left)
+     - `jack` shows session none (or no longer in session)
+
+9. Client B quit:
+   - `/quit`
+   - Expected: client exits normally.
+
+---
+
+**Part 2: Section 2 Feature #1 (Private Messaging)**
+
+10. Keep Client A logged in as `jill`.
+
+11. On Client B, login again if needed:
+    - `/login jack 432wlFd 127.0.0.1 8888`
+    - Expected: login success.
+
+12. Send private message from B to A:
+    - `/pm jill hello_private_message`
+    - Expected:
+      - Client A displays: `[PM from jack] hello_private_message`
+      - No public session broadcast for this message.
+
+13. Send private message to offline/nonexistent user:
+    - `/pm ghost hi`
+    - Expected on Client B: `Private message failed: Target user is not online`
+
+---
+
+**Part 3: Section 2 Feature #2 (Inactivity Timer)**
+
+14. Open a new client (or reuse one), login and stay idle:
+    - `/login user1 pass123 127.0.0.1 8888`
+    - Then do not type anything for at least 20+ seconds.
+
+15. Expected timeout behavior:
+    - Client displays: `Server timeout: Disconnected due to inactivity`
+    - Server log shows disconnect due to inactivity.
+
+16. Verify disconnected state on client:
+    - Try: `/list`
+    - Expected: `Please login first.` (because the server already disconnected this client)
+
+---
+
+**Negative Tests (Recommended in Demo)**
+
+17. Invalid password:
+    - `/login user1 wrongpass 127.0.0.1 8888`
+    - Expected: `Server response (NAK): Invalid client ID or password`
+
+18. Join non-existing session:
+    - `/joinsession no_such_session`
+    - Expected: `Session operation failed: Session does not exist`
+
+19. Send session message without joining a session:
+    - `message_without_session`
+    - Expected: `Session operation failed: Join a session before sending messages`
+
+---
+
+**Cleanup**
+
+20. Quit all clients:
+    - `/quit`
+
+21. Stop server:
+    - Press `Ctrl+C` in Terminal S.
+
+---
+
+**Implemented Commands Summary**
+
+- Section 1:
+  - `/login <client ID> <password> <server-IP> <server-port>`
+  - `/logout`
+  - `/createsession <session ID>`
+  - `/joinsession <session ID>`
+  - `/leavesession`
+  - `/list`
+  - `/quit`
+  - `<plain text>` (session message)
+
+- Section 2 (added):
+  - `/pm <target-client-id> <message>`
+  - Inactivity auto-disconnect handled by server (no extra user command needed)

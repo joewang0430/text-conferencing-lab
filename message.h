@@ -17,7 +17,10 @@ enum MessageType {
     NS_ACK,
     MESSAGE,
     QUERY,
-    QU_ACK
+    QU_ACK,
+    PRIVATE_MSG,
+    PM_NAK,
+    TIMEOUT
 };
 
 struct message {

@@ -2,18 +2,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include "message.h"
 
 #define MAX_CLIENTS 64
+#define INACTIVITY_TIMEOUT_SEC 20
 
 typedef struct {
     int sockfd;
     int logged_in;
     char client_id[MAX_NAME];
     char session_id[MAX_NAME];
+    time_t last_active;
 } client_info_t;
 
 static int send_all(int sockfd, const void *buf, size_t len) {
@@ -60,6 +63,15 @@ static int is_client_id_online(client_info_t clients[], const char *client_id) {
     return 0;
 }
 
+static int find_client_index_by_id(client_info_t clients[], const char *client_id) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].sockfd > 0 && clients[i].logged_in && strcmp(clients[i].client_id, client_id) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static int add_client(client_info_t clients[], int sockfd) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clients[i].sockfd == 0) {
@@ -67,6 +79,7 @@ static int add_client(client_info_t clients[], int sockfd) {
             clients[i].logged_in = 0;
             memset(clients[i].client_id, 0, sizeof(clients[i].client_id));
             memset(clients[i].session_id, 0, sizeof(clients[i].session_id));
+            clients[i].last_active = time(NULL);
             return i;
         }
     }
@@ -79,6 +92,7 @@ static void remove_client(client_info_t clients[], int index) {
     clients[index].logged_in = 0;
     memset(clients[index].client_id, 0, sizeof(clients[index].client_id));
     memset(clients[index].session_id, 0, sizeof(clients[index].session_id));
+    clients[index].last_active = 0;
 }
 
 static void send_response(int sockfd, unsigned int type, const char *text) {
@@ -176,6 +190,23 @@ static void multicast_to_session(client_info_t clients[], const char *session_id
     }
 }
 
+static void send_private_message(client_info_t clients[], int sender_index, const char *target_id, const char *text) {
+    int target_index = find_client_index_by_id(clients, target_id);
+    if (target_index < 0) {
+        send_response(clients[sender_index].sockfd, PM_NAK, "Target user is not online");
+        return;
+    }
+
+    struct message direct_msg;
+    memset(&direct_msg, 0, sizeof(direct_msg));
+    direct_msg.type = PRIVATE_MSG;
+    strncpy((char *)direct_msg.source, clients[sender_index].client_id, MAX_NAME - 1);
+    strncpy((char *)direct_msg.data, text, MAX_DATA - 1);
+    direct_msg.size = strlen((char *)direct_msg.data);
+
+    send_all(clients[target_index].sockfd, &direct_msg, sizeof(direct_msg));
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         printf("Usage: %s <port>\n", argv[0]);
@@ -238,12 +269,17 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+
+        int ready = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+        if (ready < 0) {
             perror("select failed");
             continue;
         }
 
-        if (FD_ISSET(server_sockfd, &readfds)) {
+        if (ready > 0 && FD_ISSET(server_sockfd, &readfds)) {
             client_len = sizeof(client_addr);
             client_sockfd = accept(server_sockfd, (struct sockaddr *)&client_addr, &client_len);
             if (client_sockfd < 0) {
@@ -255,6 +291,17 @@ int main(int argc, char *argv[]) {
                     close(client_sockfd);
                 } else {
                     printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                }
+            }
+        }
+
+        time_t now = time(NULL);
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (clients[i].sockfd > 0 && clients[i].logged_in) {
+                if (difftime(now, clients[i].last_active) >= INACTIVITY_TIMEOUT_SEC) {
+                    printf("Disconnecting inactive client: %s\n", clients[i].client_id);
+                    send_response(clients[i].sockfd, TIMEOUT, "Disconnected due to inactivity");
+                    remove_client(clients, i);
                 }
             }
         }
@@ -276,6 +323,8 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
+            clients[i].last_active = time(NULL);
+
             msg.source[MAX_NAME - 1] = '\0';
             msg.data[MAX_DATA - 1] = '\0';
 
@@ -296,6 +345,7 @@ int main(int argc, char *argv[]) {
                     strncpy(clients[i].client_id, client_id, MAX_NAME - 1);
                     clients[i].client_id[MAX_NAME - 1] = '\0';
                     clients[i].session_id[0] = '\0';
+                    clients[i].last_active = time(NULL);
                     send_response(clients[i].sockfd, LO_ACK, "Welcome!");
                 }
             } else if (!clients[i].logged_in) {
@@ -342,6 +392,18 @@ int main(int argc, char *argv[]) {
                     send_response(clients[i].sockfd, JN_NAK, "Join a session before sending messages");
                 } else {
                     multicast_to_session(clients, clients[i].session_id, clients[i].client_id, (const char *)msg.data);
+                }
+            } else if (msg.type == PRIVATE_MSG) {
+                char target_id[MAX_NAME];
+                char private_text[MAX_DATA];
+                memset(target_id, 0, sizeof(target_id));
+                memset(private_text, 0, sizeof(private_text));
+
+                int parsed = sscanf((char *)msg.data, "%127s %1023[^\n]", target_id, private_text);
+                if (parsed < 2 || private_text[0] == '\0') {
+                    send_response(clients[i].sockfd, PM_NAK, "Usage: /pm <target-client-id> <message>");
+                } else {
+                    send_private_message(clients, i, target_id, private_text);
                 }
             } else if (msg.type == EXIT) {
                 printf("Exit request from %s\n", clients[i].logged_in ? clients[i].client_id : "(not logged in)");

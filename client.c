@@ -222,6 +222,35 @@ int main(int argc, char *argv[]) {
                 } else {
                     send_simple_request(sockfd, QUERY, my_client_id, "");
                 }
+            } else if (strncmp(buffer, "/pm", 3) == 0) {
+                if (!logged_in) {
+                    printf("Please login first.\n");
+                } else {
+                    char *payload = buffer + 3;
+                    while (*payload == ' ') {
+                        payload++;
+                    }
+
+                    char *space = strchr(payload, ' ');
+                    if (payload[0] == '\0' || space == NULL) {
+                        printf("Usage: /pm <target-client-id> <message>\n");
+                    } else {
+                        *space = '\0';
+                        char *target_id = payload;
+                        char *private_text = space + 1;
+                        while (*private_text == ' ') {
+                            private_text++;
+                        }
+
+                        if (private_text[0] == '\0') {
+                            printf("Usage: /pm <target-client-id> <message>\n");
+                        } else {
+                            char pm_payload[MAX_DATA];
+                            snprintf(pm_payload, sizeof(pm_payload), "%s %s", target_id, private_text);
+                            send_simple_request(sockfd, PRIVATE_MSG, my_client_id, pm_payload);
+                        }
+                    }
+                }
             } else if (strcmp(buffer, "/quit") == 0) {
                 send_exit_if_connected(sockfd, my_client_id);
                 if (sockfd != -1) {
@@ -286,6 +315,17 @@ int main(int argc, char *argv[]) {
                 printf("%s\n", response.data);
             } else if (response.type == MESSAGE) {
                 printf("[%s] %s\n", response.source, response.data);
+            } else if (response.type == PRIVATE_MSG) {
+                printf("[PM from %s] %s\n", response.source, response.data);
+            } else if (response.type == PM_NAK) {
+                printf("Private message failed: %s\n", response.data);
+            } else if (response.type == TIMEOUT) {
+                printf("Server timeout: %s\n", response.data);
+                close(sockfd);
+                sockfd = -1;
+                logged_in = 0;
+                memset(my_client_id, 0, sizeof(my_client_id));
+                memset(my_session_id, 0, sizeof(my_session_id));
             } else {
                 printf("Received message type %u: %s\n", response.type, response.data);
             }
