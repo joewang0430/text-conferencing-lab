@@ -1,0 +1,22 @@
+**Section 1 Demo Checklist (Run in Order)**
+
+- 
+    1. Start the server: `./server 8888`; expected result: server starts listening successfully.
+- 
+    1. Open client A: `client`, then enter `/login jill eW94dsol 127.0.0.1 8888`; expected result: `Login successful`.
+- 
+    1. On client A, enter `/createsession lab_help`; expected result: `Session created and joined: lab_help`.
+- 
+    1. Open client B: `client`, then enter `/login jack 432wlFd 127.0.0.1 8888`; expected result: login succeeds.
+- 
+    1. On client B, enter `/joinsession lab_help`; expected result: `Joined session: lab_help`.
+- 
+    1. On client B, enter plain text `hello_from_jack`; expected result: both A and B display `[jack] hello_from_jack`.
+- 
+    1. On client B, enter `/list`; expected result: both `jill` and `jack` are online and in `lab_help`, with 2 session members.
+- 
+    1. On client B, enter `/leavesession`; expected result: `Left current session.` Then enter `/quit` to exit normally.
+- 
+    1. On client A, enter `/list`; expected result: only A remains in the session. Then enter `/quit` to exit.
+- 
+    1. Negative test case: open a new client and enter `/login user1 wrongpass 127.0.0.1 8888`; expected result: receive `Server response (NAK)`.
