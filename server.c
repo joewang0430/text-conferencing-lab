@@ -208,6 +208,36 @@ static void send_private_message(client_info_t clients[], int sender_index, cons
     send_all(clients[target_index].sockfd, &direct_msg, sizeof(direct_msg));
 }
 
+static int find_available_port(void) {
+    int temp_sockfd;
+    struct sockaddr_in temp_addr;
+    socklen_t temp_len = sizeof(temp_addr);
+
+    temp_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (temp_sockfd < 0) {
+        return -1;
+    }
+
+    memset(&temp_addr, 0, sizeof(temp_addr));
+    temp_addr.sin_family = AF_INET;
+    temp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    temp_addr.sin_port = htons(0);
+
+    if (bind(temp_sockfd, (struct sockaddr *)&temp_addr, sizeof(temp_addr)) < 0) {
+        close(temp_sockfd);
+        return -1;
+    }
+
+    if (getsockname(temp_sockfd, (struct sockaddr *)&temp_addr, &temp_len) < 0) {
+        close(temp_sockfd);
+        return -1;
+    }
+
+    int available_port = ntohs(temp_addr.sin_port);
+    close(temp_sockfd);
+    return available_port;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         printf("Usage: %s <port>\n", argv[0]);
@@ -244,6 +274,13 @@ int main(int argc, char *argv[]) {
 
     if (bind(server_sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("Bind failed");
+        int available_port = find_available_port();
+        if (available_port > 0) {
+            printf("Suggested available port: %d\n", available_port);
+        } else {
+            printf("Could not auto-detect an available port.\n");
+        }
+        close(server_sockfd);
         return 1;
     }
 
